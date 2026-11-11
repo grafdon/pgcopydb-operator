@@ -51,6 +51,18 @@ Codecov rejects tokenless uploads even from public repositories, so without the 
 The coverage total is printed in the job summary either way.
 `codecov.yml` excludes the `zz_generated*.go` files controller-gen writes, so the Codecov number reflects hand-written code.
 
+## Fork hotfix image
+
+The `grafdon` fork builds the `fix/v025-leere-datenbank` branch with
+`.github/workflows/fork-hotfix.yml` on GitHub-hosted runners.
+The branch contains v0.25.0 and the empty-database verification fix.
+PostgreSQL 16 and 18 regressions must pass before publication.
+The workflow publishes only the operator image, with a commit-specific tag,
+and records its digest in the run summary.
+It does not publish a chart or runner, update `latest`, or access a cluster.
+Consumers MUST pin the image digest and remove the override after adopting
+an official release that contains the fix.
+
 ## Self-hosted runners
 
 Two runner scale sets serve this repository, both backed by Actions Runner Controller on the dev cluster, and between them they run every job.
