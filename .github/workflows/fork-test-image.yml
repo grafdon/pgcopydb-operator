@@ -1,0 +1,96 @@
+name: Fork test image
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full commit SHA with green fork CI
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  image:
+    if: github.repository == 'grafdon/pgcopydb-operator'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    steps:
+      - name: Require successful CI for the exact source commit
+        id: source
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::source_sha must be a full lowercase commit SHA"
+            exit 1
+          fi
+          run=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml \
+            --commit "$SOURCE_SHA" --event pull_request --status success \
+            --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -z "$run" ]; then
+            echo "::error::No successful fork CI run for $SOURCE_SHA"
+            exit 1
+          fi
+          missing=$(gh run view "$run" --repo "$GITHUB_REPOSITORY" --json jobs \
+            --jq '["lint", "test", "docs"] - [.jobs[] | select(.conclusion == "success") | .name] | length')
+          if [ "$missing" != 0 ]; then
+            echo "::error::The source CI must pass lint, test, and docs"
+            exit 1
+          fi
+          {
+            echo "sha=$SOURCE_SHA"
+            echo "version=test-${SOURCE_SHA:0:12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Source CI: https://github.com/$GITHUB_REPOSITORY/actions/runs/$run" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build and publish the test image
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.IMAGE }}:${{ steps.source.outputs.version }}
+          build-args: VERSION=${{ steps.source.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
+            org.opencontainers.image.version=${{ steps.source.outputs.version }}
+      - name: Verify the image and identify its matching CRD
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          docker buildx imagetools inspect "$IMAGE@$DIGEST"
+          docker buildx imagetools inspect "$IMAGE@$DIGEST" --raw |
+            jq -e '["amd64", "arm64"] - [.manifests[] | select(.platform.os == "linux") | .platform.architecture] | length == 0'
+          docker run --rm "$IMAGE@$DIGEST" --help >/dev/null
+          crd=config/crd/bases/pgcopydb-operator.io_migrations.yaml
+          checksum=$(sha256sum "$crd" | awk '{print $1}')
+          {
+            echo "Image: \`$IMAGE@$DIGEST\`"
+            echo "Test tag: \`$IMAGE:$VERSION\`"
+            echo "CRD: https://github.com/$GITHUB_REPOSITORY/blob/$SOURCE_SHA/$crd"
+            echo "CRD SHA-256: \`$checksum\`"
+          } >> "$GITHUB_STEP_SUMMARY"
