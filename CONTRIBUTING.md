@@ -71,10 +71,11 @@ Its ServiceAccount is scoped to the e2e namespaces, which GitOps owns; it can wo
 `ci.yml` runs on `pull_request`, so it is the one workflow a fork can trigger, and it picks its runner per event instead of pinning one:
 
 ```yaml
-runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'github-runner-pgcopydb-operator' }}
+runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'github-runner-pgcopydb-operator' }}
 ```
 
 A push carries no `pull_request` payload and falls through to the cluster runner, as does a pull request from a branch in this repository; only a fork's pull request lands on a hosted one.
+Hosted CI uses Ubuntu 24.04, which supplies the GNU `timeout` required by the process-bound tests.
 GitHub's own gate is at its strictest setting (`approval_policy` is `all_external_contributors`), and a public-repo fork run gets a read-only token and no secrets.
 That gate is not what we lean on: approving a fork's pull request would also decide whether its code reaches a cluster runner, and a review approval should not double as a cluster-security decision.
 [Issue #182](https://github.com/ydixken/pgcopydb-operator/issues/182) tracks enforcing that in the cluster; until it lands, the expression above is the control.
@@ -105,10 +106,12 @@ Versions are pinned so the image is reproducible and Renovate can see them, exce
 Merging a Renovate bump rebuilds the image; the weekly schedule is for the apt packages, which move on their own.
 
 No job runs `actions/setup-go`.
-The image carries Go, and `GOTOOLCHAIN` is left at its default so a `go.mod` that has moved ahead of the image fetches the toolchain it asks for rather than failing.
+The image carries Go, and self-hosted jobs leave `GOTOOLCHAIN` at its default so a `go.mod` that has moved ahead of the image fetches the toolchain it asks for rather than failing.
 Pinning it to `local` deadlocks: the image rebuilds only once a bump is on `main`, so the pull request making the bump would be red with no way through, and a push to main races its own rebuild.
+The hosted lint job sets its minimum toolchain from `go.mod` and keeps automatic upgrades enabled.
+The custom linter builds in a separate module, so it otherwise can select the hosted image's older Go version instead.
 
-`setup-helm` and `setup-python` survive in [ci.yml](.github/workflows/ci.yml) alone, gated on `github.event.pull_request.head.repo.fork`, because that is the one workflow whose jobs can land on a hosted runner, and `ubuntu-latest` has neither Helm nor a guaranteed Python.
+`setup-helm` and `setup-python` survive in [ci.yml](.github/workflows/ci.yml) alone, gated on `github.event.pull_request.head.repo.fork`, because that is the one workflow whose jobs can land on a hosted runner.
 
 The CI `lint` job runs [actionlint](https://github.com/rhysd/actionlint) on all workflows; yamllint alone cannot detect a step that lost its `uses:`.
 If the runner lacks actionlint, CI installs the version pinned in `images/github-runner/Dockerfile` and fails if installation or linting fails.

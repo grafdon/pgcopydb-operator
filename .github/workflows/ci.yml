@@ -11,7 +11,7 @@ name: CI
 # Self-hosted for our own runs, hosted for a fork's: code from a fork must
 # never reach the cluster runner, and runner-smoke.yml states the same rule.
 # A push has no pull_request payload, so the expression falls through to the
-# cluster runner there.
+# cluster runner there. Hosted jobs use Ubuntu 24.04 for GNU coreutils.
 #
 # The cache volume. /cache is a directory on the node the runner landed on, so
 # it is warm per node rather than per scale set; a fork's pull request lands on
@@ -38,9 +38,15 @@ permissions:
 jobs:
   lint:
     # Runner selection: see the header.
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'github-runner-pgcopydb-operator' }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'github-runner-pgcopydb-operator' }}
     steps:
       - uses: actions/checkout@v7
+      - name: Match the hosted lint toolchain to go.mod
+        if: ${{ github.event.pull_request.head.repo.fork }}
+        run: |
+          version=$(awk '$1 == "go" {print $2; exit}' go.mod)
+          test -n "$version"
+          echo "GOTOOLCHAIN=go${version}+auto" >> "$GITHUB_ENV"
       - name: Review dependency changes
         if: github.event_name == 'pull_request'
         uses: actions/dependency-review-action@v4
@@ -140,7 +146,7 @@ jobs:
 
   test:
     # Runner selection: see the header.
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'github-runner-pgcopydb-operator' }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'github-runner-pgcopydb-operator' }}
     services:
       # The compare-data gate decides its verdict in SQL, and a server is the
       # only place that logic can be exercised. Without one TestCompareDataQuery
@@ -256,7 +262,7 @@ jobs:
 
   docs:
     # Runner selection: see the header.
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'github-runner-pgcopydb-operator' }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'github-runner-pgcopydb-operator' }}
     steps:
       - uses: actions/checkout@v7
       # The image carries python3 and mkdocs-material at the pin below.
