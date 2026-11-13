@@ -121,6 +121,25 @@ Local `task lint` runs actionlint when installed and prints a skip message other
 The Go build cache, the module cache, golangci-lint's analysis cache and the buildx layer cache live on the node under `/cache`, mounted by the scale set.
 Nothing goes through GitHub's cache service: a round trip to it cost more than it returned ([measured](docs/research/measurements.md#a-github-cache-round-trip-for-the-runner-image)), and buildx would have done the same with the image layers.
 
+## Fork test images
+
+The fork's [`fork-test-image.yml`](.github/workflows/fork-test-image.yml) builds a manager image on a GitHub-hosted runner.
+It runs only by manual dispatch in `grafdon/pgcopydb-operator`; it does not use a cluster runner.
+Set `SOURCE_SHA` to the full lowercase commit SHA, then run:
+
+```bash
+gh workflow run fork-test-image.yml --repo grafdon/pgcopydb-operator --ref main -f source_sha="$SOURCE_SHA"
+```
+
+The source MUST have a successful fork `ci.yml` pull-request run with `lint`, `test`, and `docs` all successful.
+The workflow refuses branch names, missing checks, and failed API requests before it checks out the source.
+It publishes `linux/amd64` and `linux/arm64` under a unique `test-<commit>-<run>-<attempt>` tag.
+It does not move `latest`, create a release, merge the source branch, or access a Kubernetes cluster.
+The final step checks the manifest platforms and starts the amd64 manager with `--help`.
+Its summary provides the immutable image digest, the CRD link at the exact source commit, and the CRD checksum.
+Consumers MUST pair the image with that CRD and SHOULD pin the image by digest.
+A successful build is not cluster E2E validation or production approval.
+
 ## E2e tests
 
 `task e2e` runs `test/e2e/` against the CURRENT kubectl context, a real cluster; it prints the context and prompts before touching anything (see the Caution section in [AGENTS.md](AGENTS.md)).
