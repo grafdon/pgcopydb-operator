@@ -41,12 +41,6 @@ jobs:
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'github-runner-pgcopydb-operator' }}
     steps:
       - uses: actions/checkout@v7
-      - name: Match the hosted lint toolchain to go.mod
-        if: ${{ github.event.pull_request.head.repo.fork }}
-        run: |
-          version=$(awk '$1 == "go" {print $2; exit}' go.mod)
-          test -n "$version"
-          echo "GOTOOLCHAIN=go${version}+auto" >> "$GITHUB_ENV"
       - name: Review dependency changes
         if: github.event_name == 'pull_request'
         uses: actions/dependency-review-action@v4
@@ -56,6 +50,12 @@ jobs:
           allow-licenses: >-
             Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, MIT,
             LicenseRef-scancode-google-patent-license-golang, LicenseRef-bad-apache-2.0-bsd-3-clause
+      - name: Match the hosted lint toolchain to go.mod
+        if: ${{ github.event.pull_request.head.repo.fork }}
+        run: |
+          version=$(awk '$1 == "go" {print $2; exit}' go.mod)
+          test -n "$version"
+          echo "GOTOOLCHAIN=go${version}+auto" >> "$GITHUB_ENV"
       # The cache volume: see the header.
       - name: Point the Go and lint caches at the shared volume
         run: |
