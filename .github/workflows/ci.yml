@@ -11,7 +11,7 @@ name: CI
 # Self-hosted for our own runs, hosted for a fork's: code from a fork must
 # never reach the cluster runner, and runner-smoke.yml states the same rule.
 # A push has no pull_request payload, so the expression falls through to the
-# cluster runner there.
+# cluster runner there. Hosted jobs use Ubuntu 24.04 for GNU coreutils.
 #
 # The cache volume. /cache is a directory on the node the runner landed on, so
 # it is warm per node rather than per scale set; a fork's pull request lands on
@@ -38,7 +38,7 @@ permissions:
 jobs:
   lint:
     # Runner selection: see the header.
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'github-runner-pgcopydb-operator' }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'github-runner-pgcopydb-operator' }}
     steps:
       - uses: actions/checkout@v7
       - name: Review dependency changes
@@ -50,6 +50,12 @@ jobs:
           allow-licenses: >-
             Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, MIT,
             LicenseRef-scancode-google-patent-license-golang, LicenseRef-bad-apache-2.0-bsd-3-clause
+      - name: Match the hosted lint toolchain to go.mod
+        if: ${{ github.event.pull_request.head.repo.fork }}
+        run: |
+          version=$(awk '$1 == "go" {print $2; exit}' go.mod)
+          test -n "$version"
+          echo "GOTOOLCHAIN=go${version}+auto" >> "$GITHUB_ENV"
       # The cache volume: see the header.
       - name: Point the Go and lint caches at the shared volume
         run: |
@@ -68,7 +74,8 @@ jobs:
           for pair in "$(go env GOMODCACHE 2>/dev/null):/cache/go-mod" \
                       "$HOME/.cache/go-build:/cache/go-build"; do
             src=${pair%:*} dst=${pair#*:}
-            [ -n "$src" ] && [ -d "$src" ] || continue
+            [ -n "$src" ] || continue
+            [ -d "$src" ] || continue
             [ -z "$(ls -A "$dst" 2>/dev/null)" ] || continue
             echo "Seeding $dst from the image's $src." >> "$GITHUB_STEP_SUMMARY"
             cp -a "$src/." "$dst/" 2>/dev/null || true
@@ -140,7 +147,7 @@ jobs:
 
   test:
     # Runner selection: see the header.
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'github-runner-pgcopydb-operator' }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'github-runner-pgcopydb-operator' }}
     services:
       # The compare-data gate decides its verdict in SQL, and a server is the
       # only place that logic can be exercised. Without one TestCompareDataQuery
@@ -189,7 +196,8 @@ jobs:
           for pair in "$(go env GOMODCACHE 2>/dev/null):/cache/go-mod" \
                       "$HOME/.cache/go-build:/cache/go-build"; do
             src=${pair%:*} dst=${pair#*:}
-            [ -n "$src" ] && [ -d "$src" ] || continue
+            [ -n "$src" ] || continue
+            [ -d "$src" ] || continue
             [ -z "$(ls -A "$dst" 2>/dev/null)" ] || continue
             echo "Seeding $dst from the image's $src." >> "$GITHUB_STEP_SUMMARY"
             cp -a "$src/." "$dst/" 2>/dev/null || true
@@ -256,7 +264,7 @@ jobs:
 
   docs:
     # Runner selection: see the header.
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'github-runner-pgcopydb-operator' }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || 'github-runner-pgcopydb-operator' }}
     steps:
       - uses: actions/checkout@v7
       # The image carries python3 and mkdocs-material at the pin below.
