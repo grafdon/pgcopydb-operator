@@ -82,6 +82,7 @@ jobs:
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
           VERSION: ${{ steps.source.outputs.version }}
         run: |
+          set -o pipefail
           docker buildx imagetools inspect "$IMAGE@$DIGEST"
           docker buildx imagetools inspect "$IMAGE@$DIGEST" --raw |
             jq -e '["amd64", "arm64"] - [.manifests[] | select(.platform.os == "linux") | .platform.architecture] | length == 0'
